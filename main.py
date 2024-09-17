@@ -4,8 +4,9 @@ import json
 from typing import Optional
 
 import boto3
-import boto3.session
 import botocore.exceptions
+
+from botocore.client import BaseClient
 
 
 MAX_BUCKETS = 100
@@ -34,26 +35,31 @@ def parse_arguments():
         action="store_true",
         help="Apply changes to bucket policies. Without this flag, the script runs in dry-run mode.",
     )
+    parser.add_argument(
+        "--buckets",
+        nargs='+',
+        help="Specify one or more buckets to be processed. If not specified, all buckets will be processed."
+    )
     return parser.parse_args()
 
 
-def new_s3_client() -> boto3.session.Session.client:
+def new_s3_client() -> BaseClient:
     """Create a new Boto3 S3 client
 
     Returns:
-        boto3.session.Session.client: Boto3 S3 client
+        BaseClient: Boto3 S3 client
     """
     client = boto3.client("s3")
     return client
 
 
 def list_buckets(
-    client: boto3.session.Session.client, continuation_token: Optional[str] = ""
+    client: BaseClient, continuation_token: Optional[str] = ""
 ) -> list[str]:
     """List every S3 bucket name on the account.
 
     Args:
-        client (boto3.session.Session.client): Boto3 client for S3 service
+        client (BaseClient): Boto3 client for S3 service
         continuation_token (Optional[str], optional): Continuation token used for API pagination. Defaults to "".
 
     Returns:
@@ -74,12 +80,12 @@ def list_buckets(
 
 
 def get_bucket_policy(
-    client: boto3.session.Session.client, bucket: str
+    client: BaseClient, bucket: str
 ) -> Optional[dict]:
     """Retrieve the bucket policy of a specific bucket.
 
     Args:
-        client (boto3.session.Session.client): Boto3 client for S3 service
+        client (BaseClient): Boto3 client for S3 service
         bucket (str): Bucket name
 
     Returns:
@@ -152,32 +158,53 @@ def update_bucket_policy(bucket: str, policy: Optional[dict]) -> str:
 
 
 def put_bucket_policy(
-    client: boto3.session.Session.client, bucket: str, policy: str
+    client: BaseClient, bucket: str, policy: str
 ) -> None:
     """Put a bucket policy to a specific bucket.
 
     Args:
-        client (boto3.session.Session.client): Boto3 client for S3 service
+        client (BaseClient): Boto3 client for S3 service
         bucket (str): Bucket name
         policy (str): Bucket policy content
     """
     client.put_bucket_policy(Bucket=bucket, Policy=policy)
 
 
+def bucket_exists(client: BaseClient, bucket: str) -> bool:
+    try:
+        client.head_bucket(Bucket=bucket)
+        return True
+    except botocore.exceptions.ClientError as e:
+        error_code = e.response["Error"]["Code"]
+        if error_code in ["404", "NoSuchBucket"]:
+            return False
+        else:
+            return False
+    
+
 def main():
     args = parse_arguments()
     client = new_s3_client()
-    buckets = list_buckets(client)
+    
+    if args.buckets:
+        buckets_to_process = args.buckets
+    else:
+        buckets_to_process = list_buckets(client)
     
     if not args.apply:
         print("Dry run mode, no changes will be applied")
 
-    for b in buckets:
+    for b in buckets_to_process:
+        if not bucket_exists(client, b):
+            print(f"🦴 {b} not found or access denied")
+            continue
+        
         try:
             policy = get_bucket_policy(client, b)
         except botocore.exceptions.ClientError as e:
             if e.response["Error"]["Code"] == "AccessDenied":
                 print(f"👮 access denied on {b}")
+                continue
             else:
                 print(e)
         if not is_already_implemented(b, policy):
@@ -191,7 +218,6 @@ def main():
                     print(f"☠️ failed to update {b} bucket policy: {e}")
         else:
             print(f"✔️ {b} is compliant")
-            continue
 
 
 if __name__ == "__main__":
