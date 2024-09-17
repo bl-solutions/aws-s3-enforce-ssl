@@ -1,3 +1,5 @@
+import argparse
+import copy
 import json
 from typing import Optional
 
@@ -18,6 +20,21 @@ ENFORCED_SSL_STATEMENT = {
     ],
     "Condition": {"Bool": {"aws:SecureTransport": "false"}},
 }
+
+
+def parse_arguments():
+    """Parse command arguments
+
+    Returns:
+        Namespace: Parsed command arguments
+    """
+    parser = argparse.ArgumentParser(description="Enforce SSL policies on S3 buckets.")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply changes to bucket policies. Without this flag, the script runs in dry-run mode.",
+    )
+    return parser.parse_args()
 
 
 def new_s3_client() -> boto3.session.Session.client:
@@ -76,8 +93,7 @@ def get_bucket_policy(
         if e.response["Error"]["Code"] == "NoSuchBucketPolicy":
             policy = None
         else:
-            print(f"Unexpected error on getting bucket policy for {bucket}")
-            exit(1)
+            raise e
     return policy
 
 
@@ -149,27 +165,24 @@ def put_bucket_policy(
 
 
 def main():
+    args = parse_arguments()
     client = new_s3_client()
     buckets = list_buckets(client)
+    
+    if not args.apply:
+        print("Dry run mode, no changes will be applied")
 
     for b in buckets:
-        # print(f"Bucket: {b}")
-        # print("--- Current policy ---")
         policy = get_bucket_policy(client, b)
-        # print(policy)
-
-        # print("--- Updated policy ---")
-
         if not is_already_implemented(b, policy):
             print(f"❌ {b} is not compliant")
-            try:
-                updated_policy = update_bucket_policy(b, policy)
-                # print(updated_policy)
-                # put_bucket_policy(client, b, updated_policy)
-                print(f"ℹ️ {b} bucket policy updated")
-            except:
-                print(f"☠️ failed to update {b} bucket policy")
-
+            updated_policy = update_bucket_policy(b, policy)
+            if args.apply:
+                try:
+                    put_bucket_policy(client, b, updated_policy)
+                    print(f"ℹ️ {b} bucket policy updated")
+                except botocore.exceptions.ClientError as e:
+                    print(f"☠️ failed to update {b} bucket policy: {e}")
         else:
             print(f"✔️ {b} is compliant")
             continue
