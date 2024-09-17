@@ -91,27 +91,21 @@ def is_already_implemented(bucket: str, policy: dict) -> bool:
     Returns:
         bool: True if the policy is already implemented, False if not
     """
-    already_implemented = False
-
-    if policy:
-        statements = policy["Statement"]
-    else:
-        statements = []
-
-    enforced_ssl_statement = ENFORCED_SSL_STATEMENT.copy()
-    enforced_ssl_statement["Resource"] = [
-        r.format(bucket=bucket) for r in ENFORCED_SSL_STATEMENT["Resource"]
-    ]
+    if not policy:
+        return False
+    
+    enforced_ssl_statement = copy.deepcopy(ENFORCED_SSL_STATEMENT)
+    enforced_ssl_statement["Resource"] = [r.format(bucket=bucket) for r in ENFORCED_SSL_STATEMENT["Resource"]]
     enforced_ssl_statement.pop("Sid", None)
-
-    for statement in statements:
-        s = statement.copy()
+    
+    policy_statements = copy.deepcopy(policy.get("Statement", []))
+    
+    for s in policy_statements:
         s.pop("Sid", None)
         if s == enforced_ssl_statement:
-            already_implemented = True
-            break
-
-    return already_implemented
+            return True
+    
+    return False
 
 
 def update_bucket_policy(bucket: str, policy: Optional[dict]) -> str:
