@@ -173,7 +173,13 @@ def main():
         print("Dry run mode, no changes will be applied")
 
     for b in buckets:
-        policy = get_bucket_policy(client, b)
+        try:
+            policy = get_bucket_policy(client, b)
+        except botocore.exceptions.ClientError as e:
+            if e.response["Error"]["Code"] == "AccessDenied":
+                print(f"👮 access denied on {b}")
+            else:
+                print(e)
         if not is_already_implemented(b, policy):
             print(f"❌ {b} is not compliant")
             updated_policy = update_bucket_policy(b, policy)
