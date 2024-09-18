@@ -124,8 +124,20 @@ def is_already_implemented(bucket: str, policy: dict) -> bool:
     
     for s in policy_statements:
         s.pop("Sid", None)
-        if s == enforced_ssl_statement:
-            return True
+        
+        if s["Effect"] != enforced_ssl_statement["Effect"]:
+            continue
+        if s["Principal"] != enforced_ssl_statement["Principal"]:
+            continue
+        if s["Action"] != enforced_ssl_statement["Action"]:
+            continue
+        if s["Condition"] != enforced_ssl_statement["Condition"]:
+            continue
+        for r in s["Resource"]:
+            if len(r) != len(enforced_ssl_statement["Resource"]) and r not in enforced_ssl_statement["Resource"]:
+                break
+
+        return True
     
     return False
 
